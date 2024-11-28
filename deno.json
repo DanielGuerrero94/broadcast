@@ -1,8 +1,27 @@
 {
-  "tasks": {
-    "dev": "deno run --watch main.ts"
+  "compilerOptions": {
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "useUnknownInCatchVariables": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true
   },
-  "imports": {
-    "@std/assert": "jsr:@std/assert@1"
-  }
+  "name": "@dannyden/broadcast",
+  "version": "0.0.0",
+  "license": "MIT",
+  "tasks": {
+    "server": "deno run main.ts",
+    "client": "deno run -A main.ts"
+  },
+  "lint": {
+    "rules": {
+      "include": [
+        "camelcase",
+        "no-sync-fn-in-async-fn",
+        "single-var-declarator",
+        "verbatim-module-syntax"
+      ]
+    }
+  },
+  "exports": "./main.ts"
 }

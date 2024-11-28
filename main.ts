@@ -1,3 +1,7 @@
+import readline from "node:readline";
+import process from "node:process";
+import { randomUUID } from "node:crypto";
+
 // See: https://docs.deno.com/examples/os-signals/
 const handleServerKillSignal = (
   abort: AbortController,
@@ -11,12 +15,12 @@ const handleServerKillSignal = (
       }
     }
 
-    console.log("Closing server with 5000 ms for clients to disconnect");
+    console.log("Closing server with 2000 ms for clients to disconnect");
     setTimeout(() => {
       abort.abort();
 
       Deno.exit(1);
-    }, 5000);
+    }, 2000);
   };
   Deno.addSignalListener("SIGINT", sigIntHandler);
 };
@@ -24,7 +28,7 @@ const handleServerKillSignal = (
 const clients: WebSocket[] = [];
 
 // See: https://docs.deno.com/examples/http-server-websocket/
-const openWs = () => {
+export const openWs = (): void => {
   // See: https://developer.mozilla.org/en-US/docs/Web/API/AbortController
   // And also: https://docs.deno.com/api/deno/~/Deno.serve
   const abort = new AbortController();
@@ -39,8 +43,8 @@ const openWs = () => {
       clients.push(socket);
     });
     socket.addEventListener("message", (event) => {
-      if (event.data === "ping") {
-        socket.send("pong");
+      if (event.data.match(/^join/)) {
+        socket.send("Welcome " + event.data.split(":")[1]);
         return;
       }
       // Broadcast the message to all connected clients
@@ -75,25 +79,21 @@ const handleClientKillSignal = (socket: WebSocket) => {
 };
 
 // See: https://docs.deno.com/examples/websocket/
-export const connectToWs = () => {
+export const connectToWs = (username: string): void => {
   const socket = new WebSocket("ws://localhost:8000");
   handleClientKillSignal(socket);
+
   socket.addEventListener("open", () => {
     if (socket.readyState !== WebSocket.OPEN) return;
-    socket.send("ping");
-    setTimeout(() => socket.send("HI"), 2000);
+    socket.send(`join:${username}`);
   });
-  socket.addEventListener("message", (event) => {
-    if (event.data === "shutdown") {
-      console.log("Server is shutting down.");
-      socket.close();
-    }
-    console.log(event.data);
-  });
+
   socket.addEventListener("close", () => {
     console.log("The connection has been closed successfully.");
+    rl.close();
     Deno.exit();
   });
+
   socket.addEventListener("error", (event) => {
     const connectionRefused = event instanceof ErrorEvent &&
       event.message.startsWith("NetworkError");
@@ -104,11 +104,47 @@ export const connectToWs = () => {
     const poorlyClosedSocket = event instanceof ErrorEvent &&
       event.message === "Unexpected EOF";
     if (poorlyClosedSocket) {
-      console.log("WebSocker error: Server stopped without waiting");
+      console.log("WebSocket error: Server stopped without waiting");
       Deno.exit(1);
     }
     console.log("WebSocket error: ", event);
     Deno.exit(1);
+  });
+
+  // Request environment permission explicitly before readline takes control
+  Deno.permissions.request({ name: "env", variable: "TERM" });
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  rl.on("line", (msg) => {
+    socket.send(`${username}: ` + msg);
+    readlineReset();
+  });
+
+  const readlineClear = () => {
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+  };
+
+  const readlineReset = () => {
+    readlineClear();
+    rl.setPrompt(`${username}: `);
+    rl.prompt();
+  };
+
+  socket.addEventListener("message", (event) => {
+    if (event.data.match(username + ":")?.length) return;
+    if (event.data === "shutdown") {
+      console.log("Server is shutting down.");
+      socket.close();
+    }
+
+    readlineClear();
+    console.log(event.data);
+    readlineReset();
   });
 };
 
@@ -116,10 +152,11 @@ export const connectToWs = () => {
 if (import.meta.main) {
   const action = Deno.args[0];
   if (action === "start") {
-    console.log("start ws");
+    console.log("...starting ws");
     openWs();
   } else {
-    console.log("connect to ws");
-    connectToWs();
+    console.log("...connecting to ws");
+    const username = Deno.args[1] || randomUUID();
+    connectToWs(username);
   }
 }
